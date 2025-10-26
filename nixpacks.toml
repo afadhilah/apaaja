@@ -1,16 +1,2 @@
-[phases.setup]
-nixPkgs = ['nodejs_20', 'php82', 'php82Packages.composer']
-
-[phases.install]
-cmds = [
-    'composer install --no-dev --optimize-autoloader --no-interaction',
-    'npm ci --prefer-offline --no-audit',
-]
-
-[phases.build]
-cmds = [
-    'npm run build',
-]
-
-[start]
-cmd = 'php artisan serve'
+# Railway will use Railpack (Laravel auto-detection)
+# Just specify node version if needed
