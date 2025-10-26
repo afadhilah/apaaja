@@ -42,12 +42,12 @@ class ChatController extends Controller
     public function sendMessage(Request $request)
     {
         $request->validate([
-            'message' => 'required|string',
+            'message' => 'required|string|max:1000', // Add max length
             'filters' => 'nullable|array',
-            'filters.topic' => 'nullable|string',
-            'filters.minCitations' => 'nullable|integer',
-            'filters.yearFrom' => 'nullable|integer',
-            'filters.yearTo' => 'nullable|integer',
+            'filters.topic' => 'nullable|string|max:200',
+            'filters.minCitations' => 'nullable|integer|min:0|max:100000',
+            'filters.yearFrom' => 'nullable|integer|min:1900|max:' . date('Y'),
+            'filters.yearTo' => 'nullable|integer|min:1900|max:' . date('Y'),
         ]);
 
         set_time_limit(60);
@@ -58,13 +58,27 @@ class ChatController extends Controller
         $minCitations = $filters['minCitations'] ?? 0;
         $yearFrom = $filters['yearFrom'] ?? 1900;
         $yearTo = $filters['yearTo'] ?? date('Y');
+        
+        // Validate year range
+        if ($yearFrom > $yearTo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Year range invalid: yearFrom must be <= yearTo',
+            ], 400);
+        }
 
         try {
             // STEP 1: Extract references FIRST (before calling AI)
             $references = $this->extractReferences($request->message, $filters);
             
             // STEP 2: Build enhanced prompt with references context
-            $systemPrompt = 'You are CompBuddy, an AI assistant specialized in Computer Science research papers. Your role is to help students, researchers, and practitioners find and understand CS papers.';
+            $systemPrompt = 'You are an AI assistant specialized in Computer Science research papers. Help users understand CS papers and concepts.';
+            
+            $systemPrompt .= "\n\nIMPORTANT RULES:";
+            $systemPrompt .= "\n- NEVER introduce yourself or mention your name";
+            $systemPrompt .= "\n- NEVER say things like 'I am CompBuddy' or 'As an AI assistant'";
+            $systemPrompt .= "\n- Answer questions directly without self-reference";
+            $systemPrompt .= "\n- Focus on providing helpful, accurate information about CS papers";
             
             if (!empty($topic)) {
                 $systemPrompt .= "\n\nFocus on papers related to: " . $topic;
@@ -77,12 +91,13 @@ class ChatController extends Controller
             }
 
             // Add references context to prompt
-            $systemPrompt .= "\n\nIMPORTANT INSTRUCTIONS:";
+            $systemPrompt .= "\n\nFORMATTING INSTRUCTIONS:";
             $systemPrompt .= "\n1. Use markdown formatting: **bold** for key terms";
             $systemPrompt .= "\n2. Cite papers using [1], [2], [3], etc. format";
             $systemPrompt .= "\n3. Only cite papers from the provided list below";
-            $systemPrompt .= "\n5. Explain concepts clearly for someone with basic CS knowledge";
-            $systemPrompt .= "\n6. Semisal abstrak nya tidak tersedia, dijelaskan saja pada judulnya";
+            $systemPrompt .= "\n4. Explain concepts clearly for someone with basic CS knowledge";
+            $systemPrompt .= "\n5. If abstract is unavailable, explain based on the title";
+            $systemPrompt .= "\n6. Be concise and direct - no pleasantries or self-introductions";
             
             if (!empty($references)) {
                 $systemPrompt .= "\n\nAvailable papers to cite:";
@@ -212,9 +227,19 @@ class ChatController extends Controller
             $messageKeywords = $this->extractKeywords($message, $topic);
             $keywords = array_merge($keywords, $messageKeywords);
             
-            // Remove duplicates and limit to most relevant
+            // Remove duplicates while preserving order (topic keywords first)
             $keywords = array_unique($keywords);
-            $keywords = array_slice($keywords, 0, 5); // Limit to top 5 keywords
+            
+            // Prioritize topic keywords - ensure they're at the front
+            if (!empty($topic)) {
+                $topicKeywords = array_map('trim', explode(',', $topic));
+                $topicKeywords = array_filter($topicKeywords);
+                // Move topic keywords to front
+                $keywords = array_merge($topicKeywords, array_diff($keywords, $topicKeywords));
+            }
+            
+            // Limit to most relevant (topic keywords + best message keywords)
+            $keywords = array_slice($keywords, 0, 5);
             
             \Log::info('Final search keywords: ' . json_encode($keywords));
             
@@ -303,7 +328,6 @@ class ChatController extends Controller
     {
         $keywords = [];
         $messageLower = strtolower($message);
-        $topicLower = strtolower($topicFilter);
         
         // CS topics and their related terms - map directly to search terms
         $topicMap = [
@@ -320,20 +344,7 @@ class ChatController extends Controller
             'image processing' => ['image processing', 'image classification', 'image segmentation', 'object detection', 'yolo'],
         ];
         
-        // Priority 1: Check if topic filter matches any mapped topics
-        if (!empty($topicFilter)) {
-            foreach ($topicMap as $topic => $terms) {
-                foreach ($terms as $term) {
-                    if (stripos($topicLower, $term) !== false) {
-                        $keywords[] = $topic;
-                        \Log::info('Topic filter matched: ' . $topic . ' (via term: ' . $term . ')');
-                        break 2; // Exit both loops after first match
-                    }
-                }
-            }
-        }
-        
-        // Priority 2: Extract topics from message
+        // Extract topics from MESSAGE only (not topic filter - that's handled in extractReferences)
         foreach ($topicMap as $topic => $terms) {
             foreach ($terms as $term) {
                 if (strpos($messageLower, $term) !== false) {
