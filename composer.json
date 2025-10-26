@@ -62,7 +62,11 @@
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
+            "@php artisan package:discover --ansi",
+            "@php -r \"!file_exists('storage/framework/sessions') && mkdir('storage/framework/sessions', 0755, true);\"",
+            "@php -r \"!file_exists('storage/framework/views') && mkdir('storage/framework/views', 0755, true);\"",
+            "@php -r \"!file_exists('storage/framework/cache') && mkdir('storage/framework/cache', 0755, true);\"",
+            "@php -r \"!file_exists('storage/logs') && mkdir('storage/logs', 0755, true);\""
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
