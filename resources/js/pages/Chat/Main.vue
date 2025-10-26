@@ -16,6 +16,12 @@ const bubbleType = ref(null)
 const activeCitation = ref(null)
 const isLoading = ref(false)
 
+// Filter states
+const topicKeyword = ref('')
+const minCitations = ref(3)
+const yearFrom = ref(2015)
+const yearTo = ref(2025)
+
 const currentChat = computed(() => chats[currentChatIndex.value])
 
 async function pushComposer() {
@@ -33,6 +39,12 @@ async function pushComposer() {
   try {
     const response = await axios.post('/chat/send', {
       message: userMessage,
+      filters: {
+        topic: topicKeyword.value,
+        minCitations: minCitations.value,
+        yearFrom: yearFrom.value,
+        yearTo: yearTo.value
+      }
     })
 
     if (response.data.success) {
@@ -160,6 +172,86 @@ function copyCitation(format = 'apa') {
     setTimeout(() => (copied.value = false), 2000)
   })
 }
+
+function applyFilters() {
+  // Filter functionality can be triggered here
+  console.log('Filters applied:', {
+    topic: topicKeyword.value,
+    minCitations: minCitations.value,
+    yearRange: `${yearFrom.value}-${yearTo.value}`
+  })
+}
+
+function formatAIResponse(text) {
+  // Replace **text** with <strong>text</strong> for semi-bold
+  let formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  
+  // Replace [number] with superscript citation links
+  formatted = formatted.replace(/\[(\d+)\]/g, (match, num) => {
+    return `<sup class="citation-link" data-citation="${num}">[${num}]</sup>`
+  })
+  
+  // Convert markdown lists to HTML lists
+  // Match lines that start with * or - followed by a space
+  const lines = formatted.split('\n')
+  let inList = false
+  let result = []
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    
+    // Check if this line is a list item
+    if (line.match(/^[\*\-]\s+(.+)$/)) {
+      const content = line.replace(/^[\*\-]\s+/, '')
+      
+      // Start list if not already in one
+      if (!inList) {
+        result.push('<ul>')
+        inList = true
+      }
+      
+      result.push(`<li>${content}</li>`)
+    } else {
+      // Close list if we were in one
+      if (inList) {
+        result.push('</ul>')
+        inList = false
+      }
+      
+      result.push(line)
+    }
+  }
+  
+  // Close list if still open at end
+  if (inList) {
+    result.push('</ul>')
+  }
+  
+  formatted = result.join('\n')
+  
+  // Replace line breaks
+  formatted = formatted.replace(/\n/g, '<br>')
+  
+  return formatted
+}
+
+function handleCitationClick(event) {
+  // Check if clicked element is a citation link
+  const citationLink = event.target.closest('.citation-link')
+  if (!citationLink) return
+  
+  const citationNum = citationLink.dataset.citation
+  if (citationNum && currentChat.value.references.length > 0) {
+    const index = parseInt(citationNum) - 1
+    if (index >= 0 && index < currentChat.value.references.length) {
+      const citation = currentChat.value.references[index]
+      openBubble('citation', citation)
+    } else {
+      console.warn(`Citation [${citationNum}] not found in references`)
+    }
+  }
+}
+
 </script>
 
 <template>
@@ -169,7 +261,7 @@ function copyCitation(format = 'apa') {
     <!-- Header -->
     <header class="flex items-center justify-between px-6 py-3 border-b panel border-panel">
       <div class="flex items-center gap-4">
-        <img src="" alt="Logo" class="w-20 h-30 object-contain shadow-md" />
+        <!-- <img src="" alt="Logo" class="w-20 h-30 object-contain shadow-md" /> -->
         <div class="text-xl font-bold">CompBuddy</div>
         <div class="hidden sm:block text-sm text-gray-400">
           Chatbot for researchers to find & understand CS papers
@@ -203,16 +295,87 @@ function copyCitation(format = 'apa') {
       </aside>
 
       <!-- Chat Panel -->
-      <main class="w-[50%] flex flex-col relative">
+      <main class="w-[70%] flex flex-col relative">
+        
+        <!-- Filter Panel -->
+        <div class="px-6 py-3 border-b bg-[#0b1220] border-[#1a2332]">
+          <div class="flex items-center gap-3">
+            <!-- Topic/Keyword -->
+            <div class="flex-1">
+              <label class="text-xs text-gray-500 block mb-1">Topic / Keyword</label>
+              <input 
+                v-model="topicKeyword" 
+                type="text" 
+                placeholder="e.g. NLP, Deep Learning"
+                class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 placeholder-gray-600 focus:border-[#2e4a6a] focus:outline-none"
+              />
+            </div>
+
+            <!-- Citations -->
+            <div class="w-32">
+              <label class="text-xs text-gray-500 block mb-1">Citations</label>
+              <select 
+                v-model="minCitations"
+                class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 focus:border-[#2e4a6a] focus:outline-none cursor-pointer"
+              >
+                <option :value="3">3</option>
+                <option :value="5">5</option>
+                <option :value="10">10</option>
+                <option :value="20">20</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+
+            <!-- Year From -->
+            <div class="w-24">
+              <label class="text-xs text-gray-500 block mb-1">From</label>
+              <input 
+                v-model.number="yearFrom" 
+                type="number" 
+                min="1900" 
+                max="2025"
+                class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 focus:border-[#2e4a6a] focus:outline-none"
+              />
+            </div>
+
+            <!-- Year To -->
+            <div class="w-24">
+              <label class="text-xs text-gray-500 block mb-1">To</label>
+              <input 
+                v-model.number="yearTo" 
+                type="number" 
+                min="1900" 
+                max="2025"
+                class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 focus:border-[#2e4a6a] focus:outline-none"
+              />
+            </div>
+
+            <!-- Apply Filter Button -->
+            <div class="pt-5">
+              <button 
+                @click="applyFilters"
+                class="px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Apply Filter
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="flex-1 overflow-y-auto px-8 py-6 space-y-6 relative">
           <div v-for="(m, i) in currentChat.messages" :key="i">
             <div v-if="m.type === 'ai'" class="flex justify-start">
-              <div class="bubble-ai rounded-xl px-4 py-3 shadow-md max-w-[75%]">
-                {{ m.text }}
-              </div>
+              <div 
+                class="bubble-ai rounded-xl px-4 py-2 shadow-md max-w-[75%] formatted-content"
+                v-html="formatAIResponse(m.text)"
+                @click="handleCitationClick"
+              ></div>
             </div>
             <div v-else class="flex justify-end">
-              <div class="bubble-user rounded-xl px-4 py-3 shadow-md max-w-[75%]">
+              <div class="bubble-user rounded-xl px-4 py-2 shadow-md max-w-[75%]">
                 {{ m.text }}
               </div>
             </div>
@@ -249,8 +412,13 @@ function copyCitation(format = 'apa') {
       </main>
 
       <!-- References -->
-      <aside class="w-[30%] panel border-l border-panel p-5 overflow-y-auto">
-        <div class="text-sm text-gray-400 uppercase mb-4">References</div>
+      <aside class="w-[25%] panel border-l border-panel p-5 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <div class="text-sm text-gray-400 uppercase">References</div>
+          <div v-if="currentChat.references.length > 0" class="text-xs text-gray-500">
+            ({{ currentChat.references.length }})
+          </div>
+        </div>
 
         <ul class="space-y-4" v-if="currentChat.references.length > 0">
           <li v-for="(r, i) in currentChat.references" :key="i"
@@ -266,12 +434,16 @@ function copyCitation(format = 'apa') {
                 class="px-3 py-1 rounded bg-gray-800 text-xs">
                 open
               </button>
-              
             </div>
           </li>
         </ul>
 
-        <div v-else class="text-gray-600 text-sm">No references yet</div>
+        <div v-else class="text-center py-8">
+          <div class="text-gray-600 text-sm mb-2">No references yet</div>
+          <div class="text-xs text-gray-700">
+            Start a conversation to get relevant paper references
+          </div>
+        </div>
       </aside>
     </div>
 
@@ -365,7 +537,7 @@ function copyCitation(format = 'apa') {
 }
 
 .bubble-user {
-  background: #2563eb;
+  background: #1854d4;
   color: white;
 }
 
@@ -429,5 +601,46 @@ function copyCitation(format = 'apa') {
   font-size: 14px;
   line-height: 1.45;
   color: #11202e;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Formatted AI Response Styles */
+.formatted-content {
+  line-height: 1.6;
+}
+
+.formatted-content strong {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.formatted-content .citation-link {
+  color: #60a5fa;
+  cursor: pointer;
+  font-size: 0.75em;
+  font-weight: 600;
+  margin-left: 1px;
+  transition: color 0.2s;
+}
+
+.formatted-content .citation-link:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.formatted-content ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.formatted-content li {
+  margin: 0.25rem 0;
 }
 </style>
