@@ -1,6 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "bash build.sh",
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": "public",
   "rewrites": [
     {
       "source": "/build/(.*)",

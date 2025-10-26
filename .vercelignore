@@ -1,13 +1,35 @@
+# Development files
 node_modules
-vendor
-storage/*.key
-.env
-.env.backup
+.env.local
+.env.*.local
 .phpunit.result.cache
-Homestead.json
-Homestead.yaml
 npm-debug.log
 yarn-error.log
+
+# IDE
 /.idea
 /.vscode
+
+# Tests
 /tests
+
+# Git
+.git
+.gitignore
+
+# Storage (will be generated)
+storage/*.key
+storage/logs
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+
+# Don't ignore these important files
+!vendor/
+!public/
+!bootstrap/
+!config/
+!routes/
+!app/
+!resources/
+!api/
