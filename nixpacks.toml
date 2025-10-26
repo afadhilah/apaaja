@@ -1,2 +1,5 @@
 # Railway will use Railpack (Laravel auto-detection)
-# Just specify node version if needed
+# Specify Node.js version for compatibility
+
+[phases.setup]
+nixPkgs = ["nodejs-20_x"]
