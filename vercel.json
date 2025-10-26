@@ -1,25 +1,39 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "public/build",
-  "framework": null,
-  "rewrites": [
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/build/(.*)",
-      "dest": "/build/$1"
+      "src": "api/index.php",
+      "use": "vercel-php@0.6.0"
     },
     {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "public"
+      }
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/build/(.*)",
+      "destination": "/build/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.php"
     }
   ],
   "env": {
-    "VITE_API_URL": "@api_url"
+    "APP_ENV": "production",
+    "APP_DEBUG": "false",
+    "APP_URL": "https://your-app.vercel.app",
+    "LOG_CHANNEL": "stderr",
+    "SESSION_DRIVER": "cookie"
+  },
+  "functions": {
+    "api/index.php": {
+      "runtime": "vercel-php@0.6.0",
+      "maxDuration": 30
+    }
   }
 }
