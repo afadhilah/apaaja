@@ -1,3 +1,4 @@
+````markdown
 # 🚂 Railway Environment Variables
 
 Copy paste variables ini ke Railway dashboard:
@@ -14,6 +15,8 @@ DB_CONNECTION=sqlite
 SESSION_DRIVER=file
 CACHE_STORE=file
 QUEUE_CONNECTION=sync
+GROQ_API_KEY=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
+SEMANTIC_SCHOLAR_API_KEY=YfPhbohzM7aoztSFSNCsM2pD3Fjcj7GvavYSDzhA
 ```
 
 ## Optional Performance Settings
