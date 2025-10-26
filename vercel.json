@@ -1,18 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.php",
-      "use": "vercel-php@0.6.0"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "public"
-      }
-    }
-  ],
+  "buildCommand": "bash build.sh",
   "rewrites": [
     {
       "source": "/build/(.*)",
@@ -23,17 +11,17 @@
       "destination": "/api/index.php"
     }
   ],
+  "functions": {
+    "api/**/*.php": {
+      "runtime": "vercel-php@0.7.0",
+      "maxDuration": 30
+    }
+  },
   "env": {
     "APP_ENV": "production",
     "APP_DEBUG": "false",
-    "APP_URL": "https://your-app.vercel.app",
     "LOG_CHANNEL": "stderr",
-    "SESSION_DRIVER": "cookie"
-  },
-  "functions": {
-    "api/index.php": {
-      "runtime": "vercel-php@0.6.0",
-      "maxDuration": 30
-    }
+    "SESSION_DRIVER": "cookie",
+    "CACHE_STORE": "array"
   }
 }
