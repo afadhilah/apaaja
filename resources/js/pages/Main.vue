@@ -24,6 +24,27 @@ const yearTo = ref(2025)
 
 const currentChat = computed(() => chats[currentChatIndex.value])
 
+// Collect all unique references from all AI messages in current chat
+const allReferences = computed(() => {
+  const refs = []
+  const seen = new Set()
+  
+  currentChat.value.messages.forEach(msg => {
+    if (msg.type === 'ai' && msg.references && msg.references.length > 0) {
+      msg.references.forEach(ref => {
+        // Use title as unique identifier
+        if (!seen.has(ref.title)) {
+          seen.add(ref.title)
+          refs.push(ref)
+        }
+      })
+    }
+  })
+  
+  return refs
+})
+
+
 async function pushComposer() {
   if (!composer.value.trim() || isLoading.value) return
   
@@ -48,27 +69,11 @@ async function pushComposer() {
     })
 
     if (response.data.success) {
-      // Replace loading message with actual response
+      // Replace loading message with actual response + store references with message
       currentChat.value.messages[loadingMessageIndex] = {
         type: 'ai',
-        text: response.data.message
-      }
-
-      // Debug logging
-      console.log('Response data:', response.data)
-      console.log('References received:', response.data.references)
-      console.log('Current references before:', currentChat.value.references)
-
-      // Add references if any
-      if (response.data.references && response.data.references.length > 0) {
-        // Clear duplicates by checking title
-        response.data.references.forEach(newRef => {
-          const exists = currentChat.value.references.some(r => r.title === newRef.title)
-          if (!exists) {
-            currentChat.value.references.push(newRef)
-          }
-        })
-        console.log('Current references after:', currentChat.value.references)
+        text: response.data.message,
+        references: response.data.references || [] // Store references per message
       }
 
       // Update chat name and last message
@@ -241,14 +246,33 @@ function handleCitationClick(event) {
   if (!citationLink) return
   
   const citationNum = citationLink.dataset.citation
-  if (citationNum && currentChat.value.references.length > 0) {
-    const index = parseInt(citationNum) - 1
-    if (index >= 0 && index < currentChat.value.references.length) {
-      const citation = currentChat.value.references[index]
-      openBubble('citation', citation)
-    } else {
-      console.warn(`Citation [${citationNum}] not found in references`)
-    }
+  
+  // Find the message element that contains this citation
+  const messageElement = event.target.closest('.message-bubble')
+  if (!messageElement) {
+    console.warn('Could not find parent message element')
+    return
+  }
+  
+  // Get message index from data attribute
+  const messageIndex = messageElement.dataset.messageIndex
+  if (messageIndex === undefined) {
+    console.warn('Message index not found')
+    return
+  }
+  
+  const message = currentChat.value.messages[parseInt(messageIndex)]
+  if (!message || !message.references || message.references.length === 0) {
+    console.warn('No references found for this message')
+    return
+  }
+  
+  const index = parseInt(citationNum) - 1
+  if (index >= 0 && index < message.references.length) {
+    const citation = message.references[index]
+    openBubble('citation', citation)
+  } else {
+    console.warn(`Citation [${citationNum}] not found in message references`)
   }
 }
 
@@ -369,7 +393,8 @@ function handleCitationClick(event) {
           <div v-for="(m, i) in currentChat.messages" :key="i">
             <div v-if="m.type === 'ai'" class="flex justify-start">
               <div 
-                class="bubble-ai rounded-xl px-4 py-2 shadow-md max-w-[75%] formatted-content"
+                class="bubble-ai message-bubble rounded-xl px-4 py-2 shadow-md max-w-[75%] formatted-content"
+                :data-message-index="i"
                 v-html="formatAIResponse(m.text)"
                 @click="handleCitationClick"
               ></div>
@@ -415,13 +440,13 @@ function handleCitationClick(event) {
       <aside class="w-[25%] panel border-l border-panel p-5 overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <div class="text-sm text-gray-400 uppercase">References</div>
-          <div v-if="currentChat.references.length > 0" class="text-xs text-gray-500">
-            ({{ currentChat.references.length }})
+          <div v-if="allReferences.length > 0" class="text-xs text-gray-500">
+            ({{ allReferences.length }})
           </div>
         </div>
 
-        <ul class="space-y-4" v-if="currentChat.references.length > 0">
-          <li v-for="(r, i) in currentChat.references" :key="i"
+        <ul class="space-y-4" v-if="allReferences.length > 0">
+          <li v-for="(r, i) in allReferences" :key="i"
             class="bg-[#0c111a] p-4 rounded-xl border border-gray-800 shadow">
             <div class="flex justify-between mb-1">
               <div class="font-semibold text-sm">{{ r.title }}</div>
