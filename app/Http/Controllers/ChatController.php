@@ -10,7 +10,7 @@ class ChatController extends Controller
 {
     public function index()
     {
-        return Inertia::render('Chat/Main', [
+        return Inertia::render('Main', [
             'initialChats' => [
                 [
                     'name' => 'Chat 1',
