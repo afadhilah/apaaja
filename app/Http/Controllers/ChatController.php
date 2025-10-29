@@ -42,7 +42,7 @@ class ChatController extends Controller
     public function sendMessage(Request $request)
     {
         $request->validate([
-            'message' => 'required|string|max:1000', // Add max length
+            'message' => 'required|string|max:10000', // Add max length
             'filters' => 'nullable|array',
             'filters.topic' => 'nullable|string|max:200',
             'filters.minCitations' => 'nullable|integer|min:0|max:100000',
@@ -248,10 +248,12 @@ class ChatController extends Controller
                 return $this->getFallbackReferences($message, $filters);
             }
             
-            // STEP 3: Search Semantic Scholar API with keywords
+            // STEP 3: Search BOTH Semantic Scholar AND Scopus APIs
             $searchQuery = implode(' ', $keywords);
-            \Log::info('Semantic Scholar search query: ' . $searchQuery);
+            \Log::info('Multi-source search query: ' . $searchQuery);
             
+            // Search Semantic Scholar
+            $semanticScholarRefs = [];
             $response = Http::timeout(10)
                 ->withOptions(['verify' => false])
                 ->withHeaders([
@@ -259,8 +261,8 @@ class ChatController extends Controller
                 ])
                 ->get('https://api.semanticscholar.org/graph/v1/paper/search', [
                     'query' => $searchQuery,
-                    'limit' => 20, // Get more results to filter
-                    'year' => $yearFrom . '-' . $yearTo, // Apply year filter
+                    'limit' => 10,
+                    'year' => $yearFrom . '-' . $yearTo,
                     'fields' => 'title,authors,year,abstract,venue,externalIds,citationCount,paperId'
                 ]);
 
@@ -273,18 +275,16 @@ class ChatController extends Controller
                         // Apply citation count filter
                         $citationCount = $paper['citationCount'] ?? 0;
                         if ($citationCount < $minCitations) {
-                            \Log::debug('Skipping paper (low citations): ' . ($paper['title'] ?? 'Unknown') . ' (' . $citationCount . ' citations)');
                             continue;
                         }
                         
                         // Apply year range filter (double check)
                         $paperYear = $paper['year'] ?? null;
                         if ($paperYear && ($paperYear < $yearFrom || $paperYear > $yearTo)) {
-                            \Log::debug('Skipping paper (year out of range): ' . ($paper['title'] ?? 'Unknown') . ' (' . $paperYear . ')');
                             continue;
                         }
                         
-                        $references[] = [
+                        $semanticScholarRefs[] = [
                             'title' => $paper['title'] ?? 'Unknown',
                             'year' => $paperYear,
                             'snippet' => isset($paper['abstract']) 
@@ -297,17 +297,22 @@ class ChatController extends Controller
                             'venue' => $paper['venue'] ?? 'Unknown',
                             'citationCount' => $citationCount,
                             'paperId' => $paper['paperId'] ?? null,
+                            'source' => 'Semantic Scholar', // Mark source
                         ];
-                        
-                        // Limit to 6 results
-                        if (count($references) >= 6) {
-                            break;
-                        }
                     }
                 }
             } else {
                 \Log::error('Semantic Scholar API failed: ' . $response->status());
             }
+            
+            // Search Scopus (if API key configured)
+            $scopusRefs = $this->searchScopus($searchQuery, $yearFrom, $yearTo, $minCitations, 10);
+            
+            // Merge and deduplicate results
+            $references = $this->mergeReferences($semanticScholarRefs, $scopusRefs);
+            
+            // Limit to top 6 results
+            $references = array_slice($references, 0, 6);
             
             // Fallback if API fails or no results
             if (empty($references)) {
@@ -577,7 +582,8 @@ class ChatController extends Controller
                 'doi' => '10.5555/3295222.3295349',
                 'venue' => 'NeurIPS 2017',
                 'citationCount' => 50000,
-                'keywords' => ['transformer', 'attention', 'nlp', 'deep learning', 'neural network']
+                'keywords' => ['transformer', 'attention', 'nlp', 'deep learning', 'neural network'],
+                'source' => 'Fallback'
             ],
             'bert' => [
                 'title' => 'BERT: Pre-training of Deep Bidirectional Transformers',
@@ -587,7 +593,8 @@ class ChatController extends Controller
                 'doi' => '10.18653/v1/N19-1423',
                 'venue' => 'NAACL 2019',
                 'citationCount' => 40000,
-                'keywords' => ['bert', 'nlp', 'transformer', 'language model', 'pre-training']
+                'keywords' => ['bert', 'nlp', 'transformer', 'language model', 'pre-training'],
+                'source' => 'Fallback'
             ],
             'gpt' => [
                 'title' => 'Language Models are Few-Shot Learners',
@@ -597,7 +604,8 @@ class ChatController extends Controller
                 'doi' => '10.5555/3495724.3495883',
                 'venue' => 'NeurIPS 2020',
                 'citationCount' => 35000,
-                'keywords' => ['gpt', 'language model', 'nlp', 'transformer', 'few-shot learning']
+                'keywords' => ['gpt', 'language model', 'nlp', 'transformer', 'few-shot learning'],
+                'source' => 'Fallback'
             ],
             'resnet' => [
                 'title' => 'Deep Residual Learning for Image Recognition',
@@ -607,7 +615,8 @@ class ChatController extends Controller
                 'doi' => '10.1109/CVPR.2016.90',
                 'venue' => 'CVPR 2016',
                 'citationCount' => 45000,
-                'keywords' => ['resnet', 'cnn', 'computer vision', 'image recognition', 'deep learning']
+                'keywords' => ['resnet', 'cnn', 'computer vision', 'image recognition', 'deep learning'],
+                'source' => 'Fallback'
             ],
             'gan' => [
                 'title' => 'Generative Adversarial Networks',
@@ -617,7 +626,8 @@ class ChatController extends Controller
                 'doi' => '10.5555/2969033.2969125',
                 'venue' => 'NeurIPS 2014',
                 'citationCount' => 38000,
-                'keywords' => ['gan', 'generative', 'deep learning', 'neural network', 'adversarial']
+                'keywords' => ['gan', 'generative', 'deep learning', 'neural network', 'adversarial'],
+                'source' => 'Fallback'
             ],
             'attention' => [
                 'title' => 'Neural Machine Translation by Jointly Learning to Align and Translate',
@@ -627,7 +637,8 @@ class ChatController extends Controller
                 'doi' => '10.48550/arXiv.1409.0473',
                 'venue' => 'ICLR 2015',
                 'citationCount' => 30000,
-                'keywords' => ['attention', 'nlp', 'machine translation', 'neural network', 'seq2seq']
+                'keywords' => ['attention', 'nlp', 'machine translation', 'neural network', 'seq2seq'],
+                'source' => 'Fallback'
             ],
             'alexnet' => [
                 'title' => 'ImageNet Classification with Deep Convolutional Neural Networks',
@@ -637,7 +648,8 @@ class ChatController extends Controller
                 'doi' => '10.1145/3065386',
                 'venue' => 'NeurIPS 2012',
                 'citationCount' => 55000,
-                'keywords' => ['alexnet', 'cnn', 'computer vision', 'image classification', 'deep learning']
+                'keywords' => ['alexnet', 'cnn', 'computer vision', 'image classification', 'deep learning'],
+                'source' => 'Fallback'
             ],
         ];
         
@@ -719,5 +731,153 @@ class ChatController extends Controller
         \Log::info('Applied filters - Topic: "' . $topic . '", Year: ' . $yearFrom . '-' . $yearTo . ', Min Citations: ' . $minCitations);
         
         return $references;
+    }
+
+    private function searchScopus($query, $yearFrom, $yearTo, $minCitations = 0, $limit = 10)
+    {
+        $references = [];
+        
+        // Check if Scopus API key is configured
+        if (!env('SCOPUS_API_KEY')) {
+            \Log::info('Scopus API key not configured, skipping Scopus search');
+            return $references;
+        }
+        
+        try {
+            \Log::info('Searching Scopus: ' . $query);
+            
+            // Build Scopus query
+            $scopusQuery = 'TITLE-ABS-KEY("' . $query . '")';
+            
+            $response = Http::timeout(10)
+                ->withOptions(['verify' => false])
+                ->withHeaders([
+                    'X-ELS-APIKey' => env('SCOPUS_API_KEY'),
+                    'Accept' => 'application/json',
+                ])
+                ->get('https://api.elsevier.com/content/search/scopus', [
+                    'query' => $scopusQuery,
+                    'date' => $yearFrom . '-' . $yearTo,
+                    'count' => $limit,
+                    'sort' => '-citedby-count', // Sort by citation count
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['search-results']['entry'])) {
+                    foreach ($data['search-results']['entry'] as $entry) {
+                        // Skip if no title
+                        if (!isset($entry['dc:title'])) {
+                            continue;
+                        }
+                        
+                        // Extract citation count
+                        $citationCount = intval($entry['citedby-count'] ?? 0);
+                        
+                        // Apply citation filter
+                        if ($citationCount < $minCitations) {
+                            continue;
+                        }
+                        
+                        // Extract year
+                        $coverDate = $entry['prism:coverDate'] ?? '';
+                        $year = $coverDate ? intval(substr($coverDate, 0, 4)) : null;
+                        
+                        // Extract DOI
+                        $doi = $entry['prism:doi'] ?? null;
+                        
+                        // Extract authors
+                        $authors = 'Unknown';
+                        if (isset($entry['dc:creator'])) {
+                            $authors = $entry['dc:creator'];
+                        } elseif (isset($entry['author']) && is_array($entry['author'])) {
+                            $authorNames = array_map(fn($a) => $a['authname'] ?? '', array_slice($entry['author'], 0, 3));
+                            $authors = implode(', ', array_filter($authorNames));
+                            if (count($entry['author']) > 3) {
+                                $authors .= ' et al.';
+                            }
+                        }
+                        
+                        // Extract abstract/snippet
+                        $snippet = $entry['dc:description'] ?? 'No abstract available';
+                        if (strlen($snippet) > 150) {
+                            $snippet = substr($snippet, 0, 150) . '...';
+                        }
+                        
+                        $references[] = [
+                            'title' => $entry['dc:title'],
+                            'year' => $year,
+                            'snippet' => $snippet,
+                            'authors' => $authors,
+                            'doi' => $doi,
+                            'venue' => $entry['prism:publicationName'] ?? 'Unknown',
+                            'citationCount' => $citationCount,
+                            'scopusId' => $entry['dc:identifier'] ?? null,
+                            'source' => 'Scopus', // Mark as Scopus source
+                        ];
+                        
+                        if (count($references) >= $limit) {
+                            break;
+                        }
+                    }
+                    
+                    \Log::info('Scopus returned ' . count($references) . ' papers');
+                }
+            } else {
+                \Log::warning('Scopus API failed: ' . $response->status() . ' - ' . $response->body());
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Scopus API error: ' . $e->getMessage());
+        }
+        
+        return $references;
+    }
+
+    private function mergeReferences($semanticScholarRefs, $scopusRefs)
+    {
+        $merged = [];
+        $seen = [];
+        
+        // Add all Semantic Scholar references first
+        foreach ($semanticScholarRefs as $ref) {
+            $key = $this->getReferenceKey($ref);
+            if (!isset($seen[$key])) {
+                $ref['source'] = 'Semantic Scholar';
+                $merged[] = $ref;
+                $seen[$key] = true;
+            }
+        }
+        
+        // Add Scopus references (deduplicate by DOI or title)
+        foreach ($scopusRefs as $ref) {
+            $key = $this->getReferenceKey($ref);
+            if (!isset($seen[$key])) {
+                $merged[] = $ref;
+                $seen[$key] = true;
+            }
+        }
+        
+        // Sort by citation count (highest first)
+        usort($merged, fn($a, $b) => ($b['citationCount'] ?? 0) - ($a['citationCount'] ?? 0));
+        
+        \Log::info('Merged references: ' . count($merged) . ' total (S2: ' . count($semanticScholarRefs) . ', Scopus: ' . count($scopusRefs) . ')');
+        
+        return $merged;
+    }
+
+    private function getReferenceKey($reference)
+    {
+        // Use DOI as primary key if available
+        if (!empty($reference['doi'])) {
+            return 'doi:' . strtolower($reference['doi']);
+        }
+        
+        // Otherwise use normalized title
+        $title = strtolower(trim($reference['title'] ?? ''));
+        $title = preg_replace('/[^a-z0-9]+/', '', $title); // Remove non-alphanumeric
+        
+        return 'title:' . $title;
     }
 }

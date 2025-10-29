@@ -21,6 +21,7 @@ const topicKeyword = ref('')
 const minCitations = ref(3)
 const yearFrom = ref(2015)
 const yearTo = ref(2025)
+const affiliation = ref('') // Institution/affiliation filter
 
 const currentChat = computed(() => chats[currentChatIndex.value])
 
@@ -64,7 +65,8 @@ async function pushComposer() {
         topic: topicKeyword.value,
         minCitations: minCitations.value,
         yearFrom: yearFrom.value,
-        yearTo: yearTo.value
+        yearTo: yearTo.value,
+        affiliation: affiliation.value
       }
     })
 
@@ -183,7 +185,8 @@ function applyFilters() {
   console.log('Filters applied:', {
     topic: topicKeyword.value,
     minCitations: minCitations.value,
-    yearRange: `${yearFrom.value}-${yearTo.value}`
+    yearRange: `${yearFrom.value}-${yearTo.value}`,
+    affiliation: affiliation.value
   })
 }
 
@@ -323,14 +326,25 @@ function handleCitationClick(event) {
         
         <!-- Filter Panel -->
         <div class="px-6 py-3 border-b bg-[#0b1220] border-[#1a2332]">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 flex-wrap">
             <!-- Topic/Keyword -->
-            <div class="flex-1">
+            <div class="flex-1 min-w-[200px]">
               <label class="text-xs text-gray-500 block mb-1">Topic / Keyword</label>
               <input 
                 v-model="topicKeyword" 
                 type="text" 
                 placeholder="e.g. NLP, Deep Learning"
+                class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 placeholder-gray-600 focus:border-[#2e4a6a] focus:outline-none"
+              />
+            </div>
+
+            <!-- Institution/Affiliation -->
+            <div class="flex-1 min-w-[200px]">
+              <label class="text-xs text-gray-500 block mb-1">Institution</label>
+              <input 
+                v-model="affiliation" 
+                type="text" 
+                placeholder="e.g. Institut Teknologi Sepuluh Nopember"
                 class="w-full px-3 py-2 bg-[#0f1419] border border-[#1e2a3a] rounded-md text-sm text-gray-200 placeholder-gray-600 focus:border-[#2e4a6a] focus:outline-none"
               />
             </div>
@@ -448,9 +462,22 @@ function handleCitationClick(event) {
         <ul class="space-y-4" v-if="allReferences.length > 0">
           <li v-for="(r, i) in allReferences" :key="i"
             class="bg-[#0c111a] p-4 rounded-xl border border-gray-800 shadow">
-            <div class="flex justify-between mb-1">
-              <div class="font-semibold text-sm">{{ r.title }}</div>
-              <div class="text-xs text-gray-400">{{ r.year }}</div>
+            <div class="flex justify-between items-start mb-1">
+              <div class="font-semibold text-sm flex-1">{{ r.title }}</div>
+              <div class="flex items-center gap-2 ml-2">
+                <!-- Source badge -->
+                <span v-if="r.source === 'Scopus'" 
+                  class="px-2 py-0.5 text-[10px] font-bold rounded bg-orange-600 text-white whitespace-nowrap"
+                  title="From Scopus">
+                  SCOPUS
+                </span>
+                <span v-else-if="r.source === 'Semantic Scholar'" 
+                  class="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-600 text-white whitespace-nowrap"
+                  title="From Semantic Scholar">
+                  S2
+                </span>
+                <div class="text-xs text-gray-400">{{ r.year }}</div>
+              </div>
             </div>
             <div class="text-xs text-gray-400 mb-3">{{ r.snippet }}</div>
             <div class="flex gap-2">
@@ -499,7 +526,19 @@ function handleCitationClick(event) {
 
             <div v-else-if="bubbleType === 'citation'">
               <div v-if="activeCitation">
-                <p class="text-sm font-semibold mb-2 text-blue-900">{{ activeCitation.title }}</p>
+                <div class="flex items-start justify-between mb-2">
+                  <p class="text-sm font-semibold text-blue-900 flex-1">{{ activeCitation.title }}</p>
+                  <span 
+                    v-if="activeCitation.source"
+                    :class="{
+                      'bg-blue-100 text-blue-800': activeCitation.source === 'Semantic Scholar',
+                      'bg-orange-100 text-orange-800': activeCitation.source === 'Scopus',
+                      'bg-gray-100 text-gray-800': activeCitation.source === 'Fallback'
+                    }"
+                    class="ml-2 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap flex-shrink-0">
+                    {{ activeCitation.source === 'Semantic Scholar' ? 'S2' : activeCitation.source }}
+                  </span>
+                </div>
                 <p class="text-xs text-slate-600 mb-1">
                   <strong>Authors:</strong> {{ activeCitation.authors || 'N/A' }}
                 </p>
